@@ -2080,11 +2080,23 @@ class HospitalDB:
                 conn.close()
     
     def create_patient_transport(self, from_location: str, to_location: str, priority: str, **kwargs) -> Dict:
-        """Erstellt Patiententransport"""
+        """Erstellt Patiententransport (max. 20 pending)"""
         with self.lock:
             conn = self.get_connection()
             cursor = conn.cursor()
             try:
+                # Prüfe aktuelle Anzahl an pending Transport-Anfragen
+                cursor.execute("""
+                    SELECT COUNT(*) FROM transport_requests 
+                    WHERE status IN ('pending', 'ausstehend')
+                """)
+                pending_count = cursor.fetchone()[0]
+                
+                # Wenn Limit erreicht, erstelle keinen neuen Transport
+                if pending_count >= 20:
+                    conn.close()
+                    return {'success': False, 'reason': 'pending_transport_limit_reached'}
+                
                 cursor.execute("""
                     INSERT INTO transport_requests 
                     (timestamp, from_location, to_location, priority, status, request_type, estimated_time_minutes)
