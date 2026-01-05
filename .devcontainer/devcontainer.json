@@ -1,0 +1,41 @@
+{
+  "name": "HospitalFlow Development",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+
+  // Port forwarding
+  "forwardPorts": [8501],
+  "portsAttributes": {
+    "8501": {
+      "label": "Streamlit",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // Run commands after container creation
+  "postCreateCommand": "pip install -r requirements.txt && echo 'Container ready! Run: streamlit run app.py'",
+
+  // Mount the workspace folder
+  "workspaceFolder": "/workspace",
+
+  // VS Code settings
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "ms-python.vscode-pylance"],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": false,
+        "python.formatting.provider": "black"
+      }
+    }
+  },
+
+  // Keep container running (don't override command)
+  "overrideCommand": false,
+
+  // Remote user
+  "remoteUser": "vscode"
+}

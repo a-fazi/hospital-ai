@@ -1,0 +1,3 @@
+# Ignoriere secrets.toml (enthält sensible Daten)
+secrets.toml
+
