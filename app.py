@@ -644,15 +644,6 @@ if auto_refresh:
 
 st.sidebar.markdown("")  # Spacing
 
-# ===== MANUELLER REFRESH BUTTON =====
-# Button für manuelle Seitenaktualisierung
-if st.sidebar.button("🔄 Daten aktualisieren", use_container_width=True):
-    # Cache leeren für alle gecachten Funktionen
-    st.cache_data.clear()
-    st.rerun()
-
-st.sidebar.markdown("")  # Spacing
-
 # ===== VERSION UND DATENSCHUTZ INFO =====
 # Zeigt Versionsinformationen und Datenschutzhinweise
 st.sidebar.markdown("""

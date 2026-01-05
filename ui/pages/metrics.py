@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, timezone
 import pandas as pd
+import numpy as np
 import io
 import json
 from utils import (
@@ -229,55 +230,122 @@ def render_metrics_section(df: pd.DataFrame, time_range_minutes: int, search_tex
     
     # Diagramm
     st.markdown("#### Metrik-Trends")
-    metric_type_labels = [METRIC_TYPE_MAP.get(mt, mt.replace('_', ' ').title()) for mt in metric_types]
-    selected_label = st.selectbox("Metrik-Typ auswählen", metric_type_labels, key="metric_chart_select")
-    selected_metric = [k for k, v in METRIC_TYPE_MAP.items() if v == selected_label][0] if selected_label in metric_type_labels else metric_types[0]
+    
+    # Chart-Optionen
+    col_chart1, col_chart2 = st.columns([3, 1])
+    with col_chart1:
+        metric_type_labels = [METRIC_TYPE_MAP.get(mt, mt.replace('_', ' ').title()) for mt in metric_types]
+        selected_label = st.selectbox("Metrik-Typ auswählen", metric_type_labels, key="metric_chart_select")
+        selected_metric = [k for k, v in METRIC_TYPE_MAP.items() if v == selected_label][0] if selected_label in metric_type_labels else metric_types[0]
+    with col_chart2:
+        max_points = st.selectbox("Max. Datenpunkte", [50, 100, 200, 500], index=1, key="max_points_select")
     
     metric_data = filtered_df[filtered_df['metric_type'] == selected_metric].sort_values('timestamp')
     if not metric_data.empty:
         metric_data = metric_data.copy()
-        # Runde Timestamps auf Sekunden (entferne Millisekunden)
+        # Konvertiere Timestamps zu datetime
         if 'timestamp' in metric_data.columns:
-            metric_data['timestamp'] = pd.to_datetime(metric_data['timestamp']).dt.floor('S')
+            metric_data['timestamp'] = pd.to_datetime(metric_data['timestamp'])
+        
+        # Bestimme Abteilungs-Spalte für Farben
         if 'department' in metric_data.columns:
             metric_data['Abteilung'] = metric_data['department'].map(lambda d: DEPT_MAP.get(d, d) if pd.notna(d) else '')
             color_col = 'Abteilung'
+            num_depts = metric_data[color_col].nunique()
         else:
             color_col = None
+            num_depts = 1
         
-        # Aggregiere auf 30-Sekunden-Intervalle
-        from utils import aggregate_to_30_seconds
-        # Wenn color_col vorhanden ist, müssen wir nach beiden gruppieren
-        if color_col and color_col in metric_data.columns:
+        # Berechne benötigtes Aggregationsintervall basierend auf gewünschter Max-Punktzahl
+        time_span = (metric_data['timestamp'].max() - metric_data['timestamp'].min()).total_seconds()
+        num_points = len(metric_data)
+        
+        # Berechne Punkte pro Abteilung
+        points_per_dept = max_points // max(1, num_depts)
+        
+        # Bestimme Aggregationsintervall um max_points nicht zu überschreiten
+        if num_points > max_points:
+            # Wir müssen aggregieren
+            target_interval_seconds = time_span / points_per_dept
+            
+            # Wähle passendes Intervall
+            if target_interval_seconds >= 3600:  # >= 1 Stunde
+                agg_interval = f"{int(target_interval_seconds / 3600)}H"
+            elif target_interval_seconds >= 60:  # >= 1 Minute
+                agg_interval = f"{int(target_interval_seconds / 60)}T"
+            else:
+                agg_interval = f"{max(1, int(target_interval_seconds))}S"
+        else:
+            # Weniger Punkte als Maximum - verwende moderate Aggregation
+            if time_span > 604800:  # > 7 Tage
+                agg_interval = '2H'
+            elif time_span > 86400:  # > 1 Tag
+                agg_interval = '30T'
+            elif time_span > 21600:  # > 6 Stunden
+                agg_interval = '10T'
+            elif time_span > 3600:  # > 1 Stunde
+                agg_interval = '5T'
+            else:
+                agg_interval = '1T'
+        
+        # Aggregiere Daten
+        if color_col and color_col in metric_data.columns and num_depts > 1:
             # Aggregiere für jede Abteilung separat
             metric_data_list = []
             for dept in metric_data[color_col].unique():
                 dept_data = metric_data[metric_data[color_col] == dept].copy()
                 if not dept_data.empty:
-                    dept_agg = aggregate_to_30_seconds(dept_data, timestamp_col='timestamp', value_col='value', agg_func='mean')
+                    dept_agg = dept_data.set_index('timestamp').resample(agg_interval)['value'].mean().reset_index()
+                    dept_agg[color_col] = dept
+                    # Limitiere auf max_points pro Abteilung
+                    if len(dept_agg) > points_per_dept:
+                        # Nehme gleichmäßig verteilte Samples
+                        indices = np.linspace(0, len(dept_agg) - 1, points_per_dept, dtype=int)
+                        dept_agg = dept_agg.iloc[indices]
                     metric_data_list.append(dept_agg)
             if metric_data_list:
                 metric_data = pd.concat(metric_data_list, ignore_index=True)
-            else:
-                metric_data = aggregate_to_30_seconds(metric_data, timestamp_col='timestamp', value_col='value', agg_func='mean')
         else:
-            metric_data = aggregate_to_30_seconds(metric_data, timestamp_col='timestamp', value_col='value', agg_func='mean')
+            # Aggregiere alle Daten zusammen
+            metric_data = metric_data.set_index('timestamp').resample(agg_interval)['value'].mean().reset_index()
+            # Limitiere auf max_points
+            if len(metric_data) > max_points:
+                indices = np.linspace(0, len(metric_data) - 1, max_points, dtype=int)
+                metric_data = metric_data.iloc[indices]
         
+        # Entferne NaN-Werte die durch Resampling entstehen können
+        metric_data = metric_data.dropna(subset=['value'])
+        
+        # Keine Marker für saubere Darstellung
+        show_markers = False
+        
+        # Erstelle sauberes Line-Chart
         fig = px.line(
             metric_data,
             x='timestamp',
             y='value',
-            color=color_col if color_col and metric_data[color_col].nunique() > 1 else None,
-            title=f"{METRIC_TYPE_MAP.get(selected_metric, selected_metric)} Verlauf",
-            markers=True
+            color=color_col if color_col and color_col in metric_data.columns and num_depts > 1 else None,
+            title=f"{METRIC_TYPE_MAP.get(selected_metric, selected_metric)} Verlauf ({len(metric_data)} Datenpunkte)",
+            markers=show_markers
         )
         fig.update_layout(
-            height=400,
+            height=450,
             xaxis_title="Zeit",
             yaxis_title="Wert",
             plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
+            paper_bgcolor='rgba(0,0,0,0)',
+            hovermode='x unified',
+            showlegend=True if color_col and num_depts > 1 else False
         )
+        # Verbesserte Linienstile
+        fig.update_traces(
+            line=dict(width=2.5, shape='spline'),  # Spline für glattere Linien
+            connectgaps=True
+        )
+        # Bessere Achsen
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.2)')
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200,200,200,0.2)')
+        
         st.plotly_chart(fig, use_container_width=True)
 
 

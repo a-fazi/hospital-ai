@@ -144,21 +144,17 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
         dept_key = "pred_filter_dept"
         type_key = "pred_filter_type"
         time_key = "pred_filter_time"
+        dept_value_key = "pred_filter_dept_value"
+        type_value_key = "pred_filter_type_value"
+        time_value_key = "pred_filter_time_value"
         
-        if dept_key not in st.session_state:
-            st.session_state[dept_key] = ["Alle"]
-        if type_key not in st.session_state:
-            st.session_state[type_key] = ["Alle"]
-        if time_key not in st.session_state:
-            st.session_state[time_key] = ["Alle"]
-        
-        # Initialisiere previous values falls nicht vorhanden
-        if f"{dept_key}_prev" not in st.session_state:
-            st.session_state[f"{dept_key}_prev"] = st.session_state[dept_key].copy()
-        if f"{type_key}_prev" not in st.session_state:
-            st.session_state[f"{type_key}_prev"] = st.session_state[type_key].copy()
-        if f"{time_key}_prev" not in st.session_state:
-            st.session_state[f"{time_key}_prev"] = st.session_state[time_key].copy()
+        # Initialisiere Werte falls nicht vorhanden
+        if dept_value_key not in st.session_state:
+            st.session_state[dept_value_key] = ["Alle"]
+        if type_value_key not in st.session_state:
+            st.session_state[type_value_key] = ["Alle"]
+        if time_value_key not in st.session_state:
+            st.session_state[time_value_key] = ["Alle"]
         
         # Filter-Spalten
         col1, col2, col3 = st.columns(3)
@@ -166,70 +162,61 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
             selected_depts_de = st.multiselect(
                 "Abteilung",
                 options=["Alle"] + departments_de,
-                default=st.session_state[dept_key],
+                default=st.session_state[dept_value_key],
                 key=dept_key
             )
             # Smart-Filter-Logik anwenden
-            previous_depts = st.session_state[f"{dept_key}_prev"]
             processed_depts = handle_smart_filter(
                 selected_depts_de, 
-                previous_depts, 
+                st.session_state[dept_value_key], 
                 ["Alle"] + departments_de, 
                 dept_key
             )
             if processed_depts != selected_depts_de:
-                st.session_state[dept_key] = processed_depts
-                st.session_state[f"{dept_key}_prev"] = processed_depts.copy()
+                st.session_state[dept_value_key] = processed_depts
                 st.rerun()
             else:
-                st.session_state[f"{dept_key}_prev"] = selected_depts_de.copy()
-            selected_depts_de = st.session_state[dept_key]
+                st.session_state[dept_value_key] = selected_depts_de
             
         with col2:
             selected_types_de = st.multiselect(
                 "Kategorie",
                 options=["Alle"] + types_de,
-                default=st.session_state[type_key],
+                default=st.session_state[type_value_key],
                 key=type_key
             )
             # Smart-Filter-Logik anwenden
-            previous_types = st.session_state[f"{type_key}_prev"]
             processed_types = handle_smart_filter(
                 selected_types_de, 
-                previous_types, 
+                st.session_state[type_value_key], 
                 ["Alle"] + types_de, 
                 type_key
             )
             if processed_types != selected_types_de:
-                st.session_state[type_key] = processed_types
-                st.session_state[f"{type_key}_prev"] = processed_types.copy()
+                st.session_state[type_value_key] = processed_types
                 st.rerun()
             else:
-                st.session_state[f"{type_key}_prev"] = selected_types_de.copy()
-            selected_types_de = st.session_state[type_key]
+                st.session_state[type_value_key] = selected_types_de
             
         with col3:
             selected_times_display = st.multiselect(
                 "Zeithorizont",
                 options=["Alle"] + times_display,
-                default=st.session_state[time_key],
+                default=st.session_state[time_value_key],
                 key=time_key
             )
             # Smart-Filter-Logik anwenden
-            previous_times = st.session_state[f"{time_key}_prev"]
             processed_times = handle_smart_filter(
                 selected_times_display, 
-                previous_times, 
+                st.session_state[time_value_key], 
                 ["Alle"] + times_display, 
                 time_key
             )
             if processed_times != selected_times_display:
-                st.session_state[time_key] = processed_times
-                st.session_state[f"{time_key}_prev"] = processed_times.copy()
+                st.session_state[time_value_key] = processed_times
                 st.rerun()
             else:
-                st.session_state[f"{time_key}_prev"] = selected_times_display.copy()
-            selected_times_display = st.session_state[time_key]
+                st.session_state[time_value_key] = selected_times_display
         
         st.markdown("")  # Spacing
         
@@ -285,21 +272,21 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                 formatted_value, value_description = format_prediction_value(pred_type_key, pred['predicted_value'])
                 value_color = get_prediction_value_color(pred_type_key, pred['predicted_value'])
                 
-                html_before = f"""<div style="background: white; padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem;">
-<div style="display: flex; justify-content: space-between; align-items: flex-start;">
-<div style="flex: 1;">
-<strong>{pred_type}</strong>
-<div style="color: #6b7280; font-size: 0.875rem; margin-top: 0.25rem;">{dept_de} • {time_str}</div>
-</div>
-<div style="text-align: right; margin-left: 1rem;">
-<div style="font-size: 1.5rem; font-weight: 700; color: {value_color};">{formatted_value}</div>
-<div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">{value_description}</div>
-<div style="font-size: 0.75rem; color: {confidence_color}; margin-top: 0.25rem;">{pred['confidence']*100:.0f}% Vertrauen</div>
-</div>
-</div>
+                html_card = f"""<div style="background: white; padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; border: 1px solid #e5e7eb;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div style="flex: 1;">
+            <strong style="font-size: 0.95rem;">{pred_type}</strong>
+            <div style="color: #6b7280; font-size: 0.875rem; margin-top: 0.25rem;">{dept_de} • {time_str}</div>
+        </div>
+        <div style="text-align: right; margin-left: 1rem;">
+            <div style="font-size: 1.5rem; font-weight: 700; color: {value_color};">{formatted_value}</div>
+            <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">{value_description}</div>
+            <div style="font-size: 0.75rem; color: {confidence_color}; margin-top: 0.25rem;">{pred['confidence']*100:.0f}% Vertrauen</div>
+        </div>
+    </div>
 </div>"""
                 
-                st.markdown(html_before, unsafe_allow_html=True)
+                st.markdown(html_card, unsafe_allow_html=True)
             
             st.markdown("### Prognose-Vertrauen nach Zeithorizont")
             
@@ -307,13 +294,15 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
             if len(df) > 0:
                 df_plot = df.copy()
                 df_plot['Vorhersagetyp'] = df_plot['prediction_type'].map(lambda x: pred_type_map.get(x, x.replace('_', ' ').title()))
+                # Ensure size values are always positive for scatter plot
+                df_plot['size_value'] = df_plot['predicted_value'].apply(lambda x: max(1, abs(x)))
                 fig = px.scatter(
                     df_plot,
                     x='time_horizon_minutes',
                     y='confidence',
-                    size='predicted_value',
+                    size='size_value',
                     color='Vorhersagetyp',
-                    hover_data=['department'],
+                    hover_data=['department', 'predicted_value'],
                     title=""
                 )
                 fig.update_layout(

@@ -1,17 +1,22 @@
 """
-HospitalFlow Vorhersage-Algorithmen
+HospitalFlow Vorhersage-Algorithmen - Verbesserte Version
 
-Algorithmen-basierte Vorhersagen, die KI-Verhalten simulieren.
-Verwendet statistische Methoden und simulierte ML-Ansätze.
+Implementiert fortgeschrittene statistische und ML-simulierte Vorhersagemethoden:
+- Exponential Smoothing für Trend-Erkennung
+- Saisonale Muster (Tageszeit, Wochentag)
+- Multi-Feature-Regression-Simulation
+- Adaptive Confidence-Berechnung
+- Anomalie-Erkennung
 """
 import numpy as np
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from database import HospitalDB
+from collections import deque
 
 
 class PredictionEngine:
-    """Engine für Vorhersagen mit algorithmen-basierten Methoden"""
+    """Verbesserte Engine für Vorhersagen mit fortgeschrittenen Methoden"""
     
     def __init__(self, db: HospitalDB):
         """
@@ -21,93 +26,313 @@ class PredictionEngine:
             db: HospitalDB-Instanz
         """
         self.db = db
+        # Cache für historische Daten zur Performance-Optimierung
+        self._history_cache = {}
+        self._cache_timestamp = None
+        self._cache_ttl = 60  # Cache für 60 Sekunden
+    
+    def _get_historical_data(self, minutes: int = 120) -> Dict[str, List]:
+        """
+        Holt und cached historische Daten für Performance.
+        
+        Returns:
+            Dict mit Listen von Werten für verschiedene Metriken
+        """
+        now = datetime.now(timezone.utc)
+        
+        # Prüfe Cache
+        if (self._cache_timestamp and 
+            (now - self._cache_timestamp).total_seconds() < self._cache_ttl):
+            return self._history_cache
+        
+        # Hole frische Daten
+        history = self.db.get_metrics_last_n_minutes(minutes)
+        
+        # Organisiere nach Metrik-Typ
+        organized = {
+            'ed_load': [],
+            'beds_free': [],
+            'waiting_count': [],
+            'staff_load': [],
+            'transport_queue': [],
+            'or_load': [],
+            'rooms_free': []
+        }
+        
+        for metric in history:
+            metric_type = metric['metric_type']
+            if metric_type in organized:
+                organized[metric_type].append({
+                    'timestamp': metric['timestamp'],
+                    'value': metric['value'],
+                    'department': metric.get('department')
+                })
+        
+        # Sortiere chronologisch (älteste zuerst)
+        for key in organized:
+            organized[key] = sorted(organized[key], key=lambda x: x['timestamp'])
+        
+        self._history_cache = organized
+        self._cache_timestamp = now
+        
+        return organized
+    
+    def _exponential_smoothing(self, values: List[float], alpha: float = 0.3) -> Tuple[float, float]:
+        """
+        Exponential Smoothing für Trend-Erkennung.
+        
+        Args:
+            values: Liste von historischen Werten
+            alpha: Smoothing-Parameter (0-1)
+            
+        Returns:
+            (smoothed_value, trend)
+        """
+        if not values:
+            return 0.0, 0.0
+        
+        if len(values) == 1:
+            return values[0], 0.0
+        
+        # Simple Exponential Smoothing
+        smoothed = values[0]
+        for val in values[1:]:
+            smoothed = alpha * val + (1 - alpha) * smoothed
+        
+        # Berechne Trend (Differenz zwischen letzten Werten)
+        if len(values) >= 3:
+            recent_window = min(5, len(values) // 3)
+            recent_avg = np.mean(values[-recent_window:])
+            older_avg = np.mean(values[:-recent_window] if recent_window < len(values) else values[:1])
+            trend = (recent_avg - older_avg) / max(1, len(values) - recent_window)
+        else:
+            trend = values[-1] - values[0]
+        
+        return smoothed, trend
+    
+    def _calculate_seasonality_factor(self, hour: int, weekday: int, metric_type: str) -> float:
+        """
+        Berechnet Saisonalitätsfaktor basierend auf Tageszeit und Wochentag.
+        
+        Args:
+            hour: Stunde des Tages (0-23)
+            weekday: Wochentag (0=Montag, 6=Sonntag)
+            metric_type: Art der Metrik
+            
+        Returns:
+            Saisonalitätsfaktor (Multiplikator)
+        """
+        # Tageszeit-Muster (unterschiedlich je nach Metrik)
+        if metric_type in ['patient_arrival', 'ed_load']:
+            # Morgen und Nachmittag-Spitzen
+            if 8 <= hour <= 11:
+                time_factor = 1.35  # Morgenspitze
+            elif 14 <= hour <= 17:
+                time_factor = 1.25  # Nachmittagsspitze
+            elif 18 <= hour <= 21:
+                time_factor = 1.10  # Abend
+            elif 22 <= hour or hour < 6:
+                time_factor = 0.55  # Nacht (niedrig)
+            else:
+                time_factor = 0.95  # Übergang
+        elif metric_type in ['bed_demand']:
+            # Bettenbedarf ist stabiler, aber steigt abends
+            if 16 <= hour <= 22:
+                time_factor = 1.15  # Abends mehr Belegung
+            elif 22 <= hour or hour < 7:
+                time_factor = 1.05  # Nachts stabil
+            else:
+                time_factor = 0.95  # Tagsüber leichte Entlassungen
+        else:
+            time_factor = 1.0
+        
+        # Wochentags-Muster
+        if weekday >= 5:  # Wochenende
+            weekday_factor = 0.80 if metric_type in ['patient_arrival', 'ed_load'] else 0.95
+        else:  # Werktag
+            weekday_factor = 1.05
+        
+        return time_factor * weekday_factor
+    
+    def _calculate_confidence(self, 
+                            history_length: int, 
+                            trend_stability: float,
+                            prediction_horizon: int,
+                            data_quality: float = 1.0) -> float:
+        """
+        Adaptive Confidence-Berechnung basierend auf mehreren Faktoren.
+        
+        Args:
+            history_length: Anzahl historischer Datenpunkte
+            trend_stability: Stabilität des Trends (0-1)
+            prediction_horizon: Vorhersagezeitraum in Minuten
+            data_quality: Qualität der Daten (0-1)
+            
+        Returns:
+            Confidence-Wert (0-1)
+        """
+        # Basis-Confidence basierend auf Datenmenge
+        if history_length >= 24:  # 2 Stunden bei 5-Min-Intervallen
+            history_confidence = 0.90
+        elif history_length >= 12:  # 1 Stunde
+            history_confidence = 0.75
+        elif history_length >= 6:  # 30 Minuten
+            history_confidence = 0.60
+        else:
+            history_confidence = 0.45
+        
+        # Trend-Stabilität beeinflusst Confidence
+        stability_factor = 0.7 + (trend_stability * 0.3)
+        
+        # Zeitliche Degradierung (je weiter in der Zukunft, desto unsicherer)
+        # 5 Min = 100%, 15 Min = 85%, 30 Min = 70%, 60 Min = 50%
+        time_decay = max(0.50, 1.0 - (prediction_horizon / 120))
+        
+        # Datenqualität
+        quality_factor = data_quality
+        
+        # Kombiniere alle Faktoren
+        confidence = history_confidence * stability_factor * time_decay * quality_factor
+        
+        return max(0.30, min(0.95, confidence))
+    
+    def _detect_anomaly(self, current_value: float, historical_values: List[float]) -> bool:
+        """
+        Erkennt Anomalien in den Daten (z.B. plötzliche Spitzen).
+        
+        Returns:
+            True wenn Anomalie erkannt
+        """
+        if len(historical_values) < 5:
+            return False
+        
+        mean = np.mean(historical_values)
+        std = np.std(historical_values)
+        
+        # Z-Score basierte Anomalie-Erkennung
+        if std == 0:
+            return False
+        
+        z_score = abs((current_value - mean) / std)
+        
+        # Anomalie wenn Z-Score > 2.5 (ca. 1% Wahrscheinlichkeit)
+        return z_score > 2.5
     
     def predict_patient_arrival(self, time_horizon_minutes: int, department: str) -> Dict:
         """
-        Vorhersage für Patientenzugang.
+        Verbesserte Vorhersage für Patientenzugang mit ML-simulierten Methoden.
         
         Args:
             time_horizon_minutes: Zeithorizont in Minuten (5, 10, 15)
             department: Abteilung
             
         Returns:
-            Dict mit predicted_value, confidence, etc.
+            Dict mit predicted_value, confidence, explanation, etc.
         """
-        # Hole historische ED Load Daten (besserer Indikator für Patientenzugang)
-        history = self.db.get_metrics_last_n_minutes(60)
-        ed_load_history = [m for m in history if m['metric_type'] == 'ed_load']
+        # Hole historische Daten
+        history_data = self._get_historical_data(120)
         
-        # Basis-Vorhersage basierend auf ED Load Trend
-        if len(ed_load_history) >= 3:
-            recent_ed_loads = [m['value'] for m in ed_load_history[-12:]]  # Letzte 12 Einträge (1 Stunde)
-            current_ed_load = recent_ed_loads[-1] if recent_ed_loads else 65.0
-            
-            # Berechne Trend der ED Load (steigende Load = mehr Patienten)
-            if len(recent_ed_loads) >= 2:
-                ed_trend = (recent_ed_loads[-1] - recent_ed_loads[0]) / len(recent_ed_loads)
-            else:
-                ed_trend = 0
-            
-            # Konvertiere ED Load Trend zu erwarteten Patientenzugängen
-            # Annahme: ED Load von 50% = ~3 Patienten/5min, 75% = ~6 Patienten/5min, 100% = ~10 Patienten/5min
-            # Formel: Patienten pro 5min ≈ (ED_Load / 10) * 0.6
-            base_patients_per_5min = (current_ed_load / 10) * 0.6
-            
-            # Trend-Korrektur: Wenn ED Load steigt, erwarten wir mehr Patienten
-            trend_adjustment = (ed_trend / 10) * 0.3  # Anpassung basierend auf Trend
-            
-            # Tageszeit-Faktor
-            now = datetime.now(timezone.utc)
-            hour = now.hour
-            if 8 <= hour <= 12:
-                time_factor = 1.3  # Morgen-Spitze
-            elif 14 <= hour <= 18:
-                time_factor = 1.2  # Nachmittag
-            elif 22 <= hour or hour < 6:
-                time_factor = 0.6  # Nacht
-            else:
-                time_factor = 0.9  # Standard
-            
-            # Wochentags-Faktor
-            weekday = now.weekday()
-            weekday_factor = 0.85 if weekday >= 5 else 1.0  # Wochenende weniger
-            
-            # Vorhergesagter Wert für den Zeithorizont
-            # Skaliere von 5-Minuten-Basis auf gewünschten Zeithorizont
-            time_scale = time_horizon_minutes / 5.0
-            base_prediction = base_patients_per_5min * time_scale
-            trend_effect = trend_adjustment * time_scale
-            predicted_value = (base_prediction + trend_effect) * time_factor * weekday_factor
-            
-            # Konfidenz basierend auf Datenqualität
-            confidence = min(0.95, 0.6 + (len(ed_load_history) / 20) * 0.35)
-            
-            # Anpassung für Zeithorizont (länger = weniger Konfidenz)
-            confidence *= (1 - (time_horizon_minutes / 60) * 0.2)
+        ed_load_history = [m['value'] for m in history_data['ed_load']]
+        waiting_history = [m['value'] for m in history_data['waiting_count']]
+        
+        # Aktuelle Werte
+        current_ed_load = ed_load_history[-1] if ed_load_history else 65.0
+        current_waiting = waiting_history[-1] if waiting_history else 3
+        
+        # === Feature Engineering ===
+        
+        # 1. Exponential Smoothing für ED Load
+        ed_smoothed, ed_trend = self._exponential_smoothing(ed_load_history[-24:] if len(ed_load_history) >= 24 else ed_load_history)
+        
+        # 2. Berechne Trend-Stabilität (für Confidence)
+        if len(ed_load_history) >= 6:
+            recent_variance = np.var(ed_load_history[-6:])
+            overall_variance = np.var(ed_load_history) if len(ed_load_history) > 1 else recent_variance
+            trend_stability = 1.0 - min(1.0, recent_variance / max(1.0, overall_variance))
         else:
-            # Fallback ohne Historie - konservative Schätzung
-            predicted_value = 3.0 * (time_horizon_minutes / 5.0)
-            confidence = 0.5
+            trend_stability = 0.5
+        
+        # 3. Anomalie-Erkennung
+        is_anomaly = self._detect_anomaly(current_ed_load, ed_load_history[-20:] if len(ed_load_history) >= 20 else ed_load_history)
+        
+        # 4. Saisonalität
+        now = datetime.now(timezone.utc)
+        seasonality_factor = self._calculate_seasonality_factor(now.hour, now.weekday(), 'patient_arrival')
+        
+        # === Multi-Feature Prediction Model (simuliert ML-Regression) ===
+        
+        # Base: ED Load ist Hauptindikator für Patientenzugang
+        # Formel: patients_per_5min ≈ 0.05 * ED_Load + 0.15 * Waiting + bias
+        # Bei 70% ED Load → ~3.5 + ~0.45 = ~4 Patienten/5min
+        base_patients_5min = (current_ed_load * 0.05) + (current_waiting * 0.15) + 0.5
+        
+        # Trend-Einfluss: Wenn ED Load steigt, erwarten wir mehr Patienten
+        trend_contribution = ed_trend * 0.4
+        
+        # Kombiniere Features
+        predicted_5min = base_patients_5min + trend_contribution
+        
+        # Skaliere auf Zeithorizont
+        time_scale = time_horizon_minutes / 5.0
+        predicted_value = predicted_5min * time_scale * seasonality_factor
+        
+        # Anomalie-Anpassung: Bei Anomalien vorsichtiger vorhersagen
+        if is_anomaly:
+            predicted_value *= 0.90  # Reduziere um 10%
+            data_quality = 0.85
+        else:
+            data_quality = 1.0
+        
+        # Begrenze auf realistische Werte
+        predicted_value = max(0, min(15 * time_scale, predicted_value))
+        
+        # === Confidence Berechnung ===
+        confidence = self._calculate_confidence(
+            history_length=len(ed_load_history),
+            trend_stability=trend_stability,
+            prediction_horizon=time_horizon_minutes,
+            data_quality=data_quality
+        )
+        
+        # === Explanation (für Transparenz) ===
+        explanation = {
+            'primary_factors': {
+                'current_ed_load': round(current_ed_load, 1),
+                'ed_trend': round(ed_trend, 2),
+                'seasonality': round(seasonality_factor, 2)
+            },
+            'secondary_factors': {
+                'waiting_count': current_waiting,
+                'trend_stability': round(trend_stability, 2),
+                'anomaly_detected': is_anomaly
+            },
+            'model_features': {
+                'base_rate': round(base_patients_5min, 2),
+                'trend_effect': round(trend_contribution, 2),
+                'time_scale': time_scale
+            }
+        }
         
         return {
             'prediction_type': 'patient_arrival',
-            'predicted_value': max(0, int(round(predicted_value))),
-            'confidence': max(0.3, confidence),
+            'predicted_value': int(round(predicted_value)),
+            'confidence': round(confidence, 3),
             'time_horizon_minutes': time_horizon_minutes,
             'department': department,
-            'model_version': 'v1.0-statistical'
+            'model_version': 'v2.0-advanced',
+            'explanation': explanation
         }
     
     def predict_bed_demand(self, time_horizon_minutes: int, department: str) -> Dict:
         """
-        Vorhersage für Bettenbedarf.
+        Verbesserte Vorhersage für Bettenbedarf mit fortgeschrittenen Methoden.
         
         Args:
-            time_horizon_minutes: Zeithorizont in Minuten (15, 30, 60)
+            time_horizon_minutes: Zeithorizont in Minuten (5, 10, 15)
             department: Abteilung
             
         Returns:
-            Dict mit predicted_value (als %), confidence, etc.
+            Dict mit predicted_value (als %), confidence, explanation, etc.
         """
         # Hole Kapazitätsdaten
         capacity = self.db.get_capacity_overview()
@@ -117,164 +342,222 @@ class PredictionEngine:
             return {
                 'prediction_type': 'bed_demand',
                 'predicted_value': 75.0,
-                'confidence': 0.5,
+                'confidence': 0.50,
                 'time_horizon_minutes': time_horizon_minutes,
                 'department': department,
-                'model_version': 'v1.0-statistical'
+                'model_version': 'v2.0-advanced',
+                'explanation': {'note': 'No department capacity data available'}
             }
         
         total_beds = dept_capacity.get('total_beds', 20)
         current_utilization = dept_capacity.get('utilization_percent', 75.0)
+        current_occupied = dept_capacity.get('occupied_beds', 15)
+        current_free = total_beds - current_occupied
         
-        # Hole historische Metriken für Betten
-        history = self.db.get_metrics_last_n_minutes(120)  # 2 Stunden
-        bed_history = [m for m in history if m['metric_type'] == 'beds_free']
+        # Hole historische Daten
+        history_data = self._get_historical_data(120)
         
-        # Berechne Trend basierend auf aktueller Auslastung und historischen Daten
-        if len(bed_history) >= 3:
-            recent_beds = [m['value'] for m in bed_history[-24:]]  # Letzte 24 Einträge
-            current_free = recent_beds[-1] if recent_beds else total_beds * (1 - current_utilization / 100)
-            current_occupied = total_beds - current_free
-            
-            # Berechne Trend: Wie ändert sich die Anzahl freier Betten?
-            # Positiver Trend = mehr Betten werden frei, negativer = mehr werden belegt
-            if len(recent_beds) >= 2:
-                # Trend pro Eintrag (ca. 5 Minuten pro Eintrag)
-                beds_trend_per_entry = (recent_beds[-1] - recent_beds[0]) / max(1, len(recent_beds) - 1)
-                # Skaliere auf Stunden (12 Einträge pro Stunde bei 5-Min-Intervallen)
-                beds_trend_per_hour = beds_trend_per_entry * 12
-            else:
-                beds_trend_per_hour = 0
-            
-            # Vorhersage: Wie viele Betten werden in X Minuten belegt sein?
-            # Wenn Trend negativ (weniger frei), werden mehr Betten belegt
-            hours_ahead = time_horizon_minutes / 60.0
-            predicted_free_change = beds_trend_per_hour * hours_ahead
-            predicted_free = max(0, min(total_beds, current_free + predicted_free_change))
-            predicted_occupied = total_beds - predicted_free
-            predicted_utilization = (predicted_occupied / total_beds) * 100 if total_beds > 0 else current_utilization
-            
-            # Begrenze auf realistische Werte
-            predicted_utilization = max(5, min(98, predicted_utilization))
-            
-            # Konfidenz basierend auf Datenqualität und Zeithorizont
-            confidence = min(0.9, 0.5 + (len(bed_history) / 30) * 0.4)
-            confidence *= (1 - (time_horizon_minutes / 120) * 0.15)  # Länger = weniger Konfidenz
+        beds_free_history = [m['value'] for m in history_data['beds_free']]
+        ed_load_history = [m['value'] for m in history_data['ed_load']]
+        waiting_history = [m['value'] for m in history_data['waiting_count']]
+        
+        # === Feature Engineering ===
+        
+        # 1. Exponential Smoothing für Beds Free
+        if beds_free_history:
+            beds_smoothed, beds_trend = self._exponential_smoothing(beds_free_history[-24:] if len(beds_free_history) >= 24 else beds_free_history)
         else:
-            # Fallback: Verwende aktuelle Auslastung mit kleiner Anpassung basierend auf ED Load
-            # Wenn ED Load hoch ist, erwarten wir mehr Bettenbedarf
-            ed_load_history = [m for m in history if m['metric_type'] == 'ed_load']
-            if ed_load_history:
-                current_ed_load = ed_load_history[-1]['value']
-                # ED Load beeinflusst Bettenbedarf mit Verzögerung
-                ed_impact = (current_ed_load - 65) * 0.15  # 65% ist Normal
-                predicted_utilization = current_utilization + ed_impact
-            else:
-                predicted_utilization = current_utilization
-            
-            predicted_utilization = max(5, min(98, predicted_utilization))
-            confidence = 0.5
+            beds_smoothed = current_free
+            beds_trend = 0.0
+        
+        # 2. ED Load als Vorlaufindikator
+        if ed_load_history:
+            current_ed_load = ed_load_history[-1]
+            ed_smoothed, ed_trend = self._exponential_smoothing(ed_load_history[-12:] if len(ed_load_history) >= 12 else ed_load_history)
+        else:
+            current_ed_load = 65.0
+            ed_smoothed = 65.0
+            ed_trend = 0.0
+        
+        # 3. Trend-Stabilität
+        if len(beds_free_history) >= 6:
+            recent_variance = np.var(beds_free_history[-6:])
+            overall_variance = np.var(beds_free_history) if len(beds_free_history) > 1 else recent_variance
+            trend_stability = 1.0 - min(1.0, recent_variance / max(1.0, overall_variance))
+        else:
+            trend_stability = 0.5
+        
+        # 4. Saisonalität
+        now = datetime.now(timezone.utc)
+        seasonality_factor = self._calculate_seasonality_factor(now.hour, now.weekday(), 'bed_demand')
+        
+        # 5. Anomalie-Erkennung
+        is_anomaly = self._detect_anomaly(current_free, beds_free_history[-20:] if len(beds_free_history) >= 20 else beds_free_history)
+        
+        # === Multi-Feature Prediction Model ===
+        
+        # Basis-Modell: Kombiniere direkten Trend mit indirekten Indikatoren
+        
+        # A) Direkte Trend-Projektion (Betten werden weiter frei/belegt)
+        hours_ahead = time_horizon_minutes / 60.0
+        
+        # Beds Trend ist in Betten pro Eintrag (~5 Min)
+        # Konvertiere zu Betten pro Stunde
+        beds_trend_per_hour = beds_trend * 12  # 12 Einträge pro Stunde
+        projected_beds_change = beds_trend_per_hour * hours_ahead
+        
+        # B) ED Load Einfluss (hohe ED Load → mehr Aufnahmen → weniger freie Betten)
+        # ED Load über Durchschnitt (65%) führt zu mehr Belegung
+        ed_impact_on_beds = -(current_ed_load - 65.0) * 0.08 * hours_ahead
+        
+        # C) Waiting Queue Einfluss (mehr Wartende → bald mehr Aufnahmen)
+        current_waiting = waiting_history[-1] if waiting_history else 3
+        waiting_impact = -(current_waiting - 3) * 0.15 * hours_ahead
+        
+        # Kombiniere alle Effekte
+        predicted_free_beds = current_free + projected_beds_change + ed_impact_on_beds + waiting_impact
+        
+        # Saisonalität einbeziehen (sanftere Anpassung)
+        # Bei Bed Demand: Faktor > 1 bedeutet mehr Belegung → weniger freie Betten
+        if seasonality_factor > 1.0:
+            seasonality_adjustment = -(seasonality_factor - 1.0) * 2  # Reduziere freie Betten um bis zu 2
+        else:
+            seasonality_adjustment = (1.0 - seasonality_factor) * 2  # Erhöhe freie Betten um bis zu 2
+        
+        predicted_free_beds += seasonality_adjustment
+        
+        # Begrenze auf physische Grenzen
+        predicted_free_beds = max(0, min(total_beds, predicted_free_beds))
+        
+        # Konvertiere zu Auslastung in %
+        predicted_occupied = total_beds - predicted_free_beds
+        predicted_utilization = (predicted_occupied / total_beds) * 100 if total_beds > 0 else current_utilization
+        
+        # Anomalie-Anpassung (vor dem finalen Clamping)
+        if is_anomaly:
+            # Bei Anomalien: Glätte Vorhersage Richtung historischem Durchschnitt
+            if beds_free_history:
+                historical_avg_free = np.mean(beds_free_history)
+                historical_avg_util = ((total_beds - historical_avg_free) / total_beds) * 100
+                # Begrenze historischen Durchschnitt auch
+                historical_avg_util = max(0.0, min(100.0, historical_avg_util))
+                predicted_utilization = predicted_utilization * 0.7 + historical_avg_util * 0.3
+            data_quality = 0.85
+        else:
+            data_quality = 1.0
+        
+        # Finale Begrenzung auf realistische Werte (0-100%)
+        predicted_utilization = max(0.0, min(100.0, predicted_utilization))
+        
+        # === Confidence Berechnung ===
+        confidence = self._calculate_confidence(
+            history_length=len(beds_free_history),
+            trend_stability=trend_stability,
+            prediction_horizon=time_horizon_minutes,
+            data_quality=data_quality
+        )
+        
+        # === Explanation ===
+        explanation = {
+            'primary_factors': {
+                'current_utilization': round(current_utilization, 1),
+                'beds_trend': round(beds_trend, 2),
+                'ed_load': round(current_ed_load, 1)
+            },
+            'secondary_factors': {
+                'waiting_queue': current_waiting,
+                'seasonality': round(seasonality_factor, 2),
+                'trend_stability': round(trend_stability, 2),
+                'anomaly_detected': is_anomaly
+            },
+            'model_features': {
+                'trend_effect': round(projected_beds_change, 2),
+                'ed_impact': round(ed_impact_on_beds, 2),
+                'waiting_impact': round(waiting_impact, 2)
+            }
+        }
         
         return {
             'prediction_type': 'bed_demand',
             'predicted_value': round(predicted_utilization, 1),
-            'confidence': max(0.3, confidence),
+            'confidence': round(confidence, 3),
             'time_horizon_minutes': time_horizon_minutes,
             'department': department,
-            'model_version': 'v1.0-statistical'
+            'model_version': 'v2.0-advanced',
+            'explanation': explanation
         }
     
     def generate_predictions(self, time_horizons: List[int] = [5, 10, 15]) -> List[Dict]:
         """
-        Generiert genau 12 Vorhersagen über alle Abteilungen hinweg.
+        Generiert optimierte Vorhersagen über relevante Abteilungen.
         
-        Verteilung:
-        - 6 Patientenzugang-Vorhersagen: 2 Abteilungen × 3 Zeithorizonte (5, 10, 15 Min)
-        - 6 Bettenbedarf-Vorhersagen: 2 Abteilungen × 3 Zeithorizonte (5, 10, 15 Min)
+        Intelligente Auswahl basierend auf:
+        - Aktuelle Auslastung
+        - Abteilungsrelevanz
+        - Datenqualität
         
         Args:
-            time_horizons: Liste von Zeithorizonten in Minuten (Standard: [5, 10, 15])
+            time_horizons: Liste von Zeithorizonten in Minuten
             
         Returns:
-            Liste von genau 12 Vorhersage-Dicts
+            Liste von Vorhersagen (flexibel 9-15 Vorhersagen)
         """
         predictions = []
         
-        # Hole alle verfügbaren Abteilungen aus der Datenbank
+        # Hole alle Abteilungen mit Kapazitätsdaten
         capacity_data = self.db.get_capacity_overview()
-        all_departments = [c['department'] for c in capacity_data if c.get('department')]
         
-        # Falls keine Abteilungen gefunden, kann keine Vorhersage generiert werden
-        if not all_departments:
+        if not capacity_data:
             return []
         
-        # Wähle Abteilungen für Patientenzugang-Vorhersagen
-        # Verwende die ersten verfügbaren Abteilungen aus der Datenbank
+        # Priorisiere Abteilungen nach Relevanz
+        # 1. ER und ICU sind immer wichtig
+        # 2. Abteilungen mit hoher Auslastung (>75%)
+        # 3. Abteilungen mit Trends
+        
+        priority_depts = []
+        high_util_depts = []
+        normal_depts = []
+        
+        for dept_data in capacity_data:
+            dept = dept_data['department']
+            util = dept_data.get('utilization_percent', 0)
+            
+            if dept in ['ER', 'ICU']:
+                priority_depts.append(dept)
+            elif util >= 75:
+                high_util_depts.append(dept)
+            else:
+                normal_depts.append(dept)
+        
+        # Wähle 2-3 Abteilungen für Patientenzugang
         patient_arrival_depts = []
-        for dept in all_departments:
-            if len(patient_arrival_depts) < 2:
-                patient_arrival_depts.append(dept)
+        if 'ER' in priority_depts:
+            patient_arrival_depts.append('ER')
+        patient_arrival_depts.extend(high_util_depts[:1])
+        if len(patient_arrival_depts) < 2 and priority_depts:
+            patient_arrival_depts.extend([d for d in priority_depts if d not in patient_arrival_depts][:2-len(patient_arrival_depts)])
+        if len(patient_arrival_depts) < 2:
+            patient_arrival_depts.extend(normal_depts[:2-len(patient_arrival_depts)])
         
-        # Falls nur eine Abteilung vorhanden, verwende sie zweimal
-        if len(patient_arrival_depts) == 1:
-            patient_arrival_depts.append(patient_arrival_depts[0])
-        
-        # Wähle Abteilungen für Bettenbedarf-Vorhersagen
-        # Verwende die ersten verfügbaren Abteilungen, die noch nicht für Patientenzugang verwendet wurden
+        # Wähle 2-3 Abteilungen für Bettenbedarf
         bed_demand_depts = []
-        # Versuche zuerst andere Abteilungen zu verwenden
-        for dept in all_departments:
-            if dept not in patient_arrival_depts and len(bed_demand_depts) < 2:
-                bed_demand_depts.append(dept)
-        
-        # Falls nicht genug verschiedene Abteilungen vorhanden, verwende auch die bereits verwendeten
-        remaining_depts = [d for d in all_departments if d not in bed_demand_depts]
-        while len(bed_demand_depts) < 2 and remaining_depts:
-            bed_demand_depts.append(remaining_depts.pop(0))
-        
-        # Falls immer noch nicht genug, verwende die ersten Abteilungen erneut
+        remaining_priority = [d for d in priority_depts if d not in patient_arrival_depts]
+        bed_demand_depts.extend(remaining_priority[:1])
+        bed_demand_depts.extend([d for d in high_util_depts if d not in patient_arrival_depts][:1])
         if len(bed_demand_depts) < 2:
-            for dept in all_departments:
-                if len(bed_demand_depts) < 2:
-                    bed_demand_depts.append(dept)
+            bed_demand_depts.extend([d for d in normal_depts if d not in patient_arrival_depts and d not in bed_demand_depts][:2-len(bed_demand_depts)])
         
-        # Generiere 6 Patientenzugang-Vorhersagen (2 Abteilungen × 3 Zeithorizonte)
-        for dept in patient_arrival_depts[:2]:  # Sicherstellen, dass nur 2 verwendet werden
+        # Generiere Vorhersagen für verschiedene Zeithorizonte
+        for dept in patient_arrival_depts[:2]:
             for horizon in time_horizons:
-                if horizon <= 15:  # Nur für kurze Zeithorizonte
-                    pred = self.predict_patient_arrival(horizon, dept)
-                    predictions.append(pred)
-        
-        # Generiere 6 Bettenbedarf-Vorhersagen (2 Abteilungen × 3 Zeithorizonte)
-        for dept in bed_demand_depts[:2]:  # Sicherstellen, dass nur 2 verwendet werden
-            for horizon in time_horizons:
-                if horizon <= 15:  # Verwende die gleichen Zeithorizonte
-                    pred = self.predict_bed_demand(horizon, dept)
-                    predictions.append(pred)
-        
-        # Sicherstellen, dass genau 12 Vorhersagen generiert wurden
-        # Falls weniger, füge fehlende hinzu
-        while len(predictions) < 12:
-            # Füge fehlende Patientenzugang-Vorhersagen hinzu
-            if len([p for p in predictions if p['prediction_type'] == 'patient_arrival']) < 6:
-                dept = patient_arrival_depts[0]
-                horizon = time_horizons[len([p for p in predictions if p['prediction_type'] == 'patient_arrival']) % len(time_horizons)]
                 pred = self.predict_patient_arrival(horizon, dept)
                 predictions.append(pred)
-            # Füge fehlende Bettenbedarf-Vorhersagen hinzu
-            elif len([p for p in predictions if p['prediction_type'] == 'bed_demand']) < 6:
-                dept = bed_demand_depts[0]
-                horizon = time_horizons[len([p for p in predictions if p['prediction_type'] == 'bed_demand']) % len(time_horizons)]
+        
+        for dept in bed_demand_depts[:2]:
+            for horizon in time_horizons:
                 pred = self.predict_bed_demand(horizon, dept)
                 predictions.append(pred)
-            else:
-                break
-        
-        # Falls mehr als 12, begrenze auf 12 (bevorzuge die ersten)
-        if len(predictions) > 12:
-            predictions = predictions[:12]
-        
-        # Speichere in DB
         self._save_predictions(predictions)
         
         return predictions
