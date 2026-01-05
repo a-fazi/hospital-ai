@@ -86,7 +86,7 @@ def render(db, sim):
                         button_label,
                         key=f"staff_{staff_id}",
                         use_container_width=True,
-                        type="primary" if is_selected else "secondary"
+                        type="secondary"
                     ):
                         st.session_state.selected_staff_id = staff_id
                         # Setze auf aktuelle Woche wenn Person ausgewählt wird

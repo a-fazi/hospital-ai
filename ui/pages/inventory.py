@@ -203,7 +203,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                         
                         # Prüfe ob dieser spezifische Button gerade verarbeitet wird
                         if processing_key not in st.session_state or not st.session_state[processing_key]:
-                            button_clicked = st.button("Bestellung bestätigen", key=button_key, type="primary", use_container_width=True)
+                            button_clicked = st.button("Bestellung bestätigen", key=button_key, type="secondary", use_container_width=True)
                             
                             if button_clicked:
                                 # Setze Flag für diesen Button, um mehrfache Verarbeitung zu verhindern
@@ -242,7 +242,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                                     st.rerun()
                         else:
                             # Wenn Processing-Flag gesetzt ist, zeige Button als disabled
-                            st.button("Bestellung bestätigen", key=button_key, type="primary", use_container_width=True, disabled=True)
+                            st.button("Bestellung bestätigen", key=button_key, type="secondary", use_container_width=True, disabled=True)
         else:
             st.markdown(render_empty_state("📦", "Keine Nachfüllvorschläge", "Alle Lagerbestände sind ausreichend"), unsafe_allow_html=True)
         

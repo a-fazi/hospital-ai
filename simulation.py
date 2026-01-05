@@ -803,12 +803,12 @@ class HospitalSimulation:
         return department  # Rückgabe für Transport-Generierung
     
     def _generate_transports_for_discharges(self, discharged_departments: List[str]):
-        """Generiert Transporte für 15-25% der Entlassungen"""
+        """Generiert Transporte für 5-10% der Entlassungen"""
         if not discharged_departments:
             return
         
-        # 15-25% der Entlassungen bekommen Transport
-        transport_probability = random.uniform(0.15, 0.25)
+        # 5-10% der Entlassungen bekommen Transport
+        transport_probability = random.uniform(0.05, 0.10)
         
         transport_destinations = [
             # Deutsche Städte

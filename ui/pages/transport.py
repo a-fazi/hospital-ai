@@ -277,7 +277,7 @@ def _show_schedule_dialog(trans, db, sim, is_edit=False):
             
             col_submit, col_cancel = st.columns(2)
             with col_submit:
-                submitted = st.form_submit_button("Speichern", type="primary", use_container_width=True)
+                submitted = st.form_submit_button("Speichern", type="secondary", use_container_width=True)
             with col_cancel:
                 cancelled = st.form_submit_button("Abbrechen", use_container_width=True)
             
@@ -434,7 +434,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                 st.warning("⚠️ Möchten Sie wirklich alle noch nicht bestätigten Transportanfragen löschen? Diese Aktion kann nicht rückgängig gemacht werden.")
                 col_confirm, col_cancel = st.columns(2)
                 with col_confirm:
-                    if st.button("Ja, alle löschen", key="confirm_delete_all_yes", type="primary", use_container_width=True):
+                    if st.button("Ja, alle löschen", key="confirm_delete_all_yes", type="secondary", use_container_width=True):
                         if db.delete_all_transport_requests():
                             # Cache invalidieren
                             _get_transport_requests_cached.clear()
@@ -631,48 +631,45 @@ def _render_transport_card(trans, db, sim, show_confirm_button=False, delay_clas
     show_button = show_confirm_button and trans['status'] in ['pending', 'ausstehend']
     show_edit_button = trans['status'] == 'planned'
     
-    if show_button or show_edit_button:
-        col_card, col_button = st.columns([5, 1])
-        card_col = col_card
-    else:
-        card_col = st.container()
-    
-    with card_col:
-        st.html(f"""
-        <div class="{delay_class}" style="background: white; padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="flex: 1;">
-                    <div>
-                        <span class="badge" style="background: {priority_color}; color: white;">{priority_display}</span>
-                        <span class="badge" style="background: {status_color}; color: white; margin-left: 0.5rem;">{status_display}</span>
-                        <strong style="margin-left: 0.5rem;">{request_type_display}</strong>
-                        {details_info}
-                    </div>
-                    {planned_time_display}
-                    {requested_time_info}
-                    <div style="color: #6b7280; font-size: 0.875rem; margin-top: 0.25rem;">
-                        {trans['from_location']} → {trans['to_location']}
-                        {f"• Geschätzt: {format_duration_minutes(trans['estimated_time_minutes'])}" if trans['estimated_time_minutes'] else ""}
-                        {f"• Tatsächlich: {format_duration_minutes(trans['actual_time_minutes'])}" if trans['actual_time_minutes'] else ""}
-                        {completion_info}
-                        {delay_info}
-                        • {format_time_ago(trans['timestamp'])}
-                    </div>
+    st.html(f"""
+    <div class="{delay_class}" style="background: white; padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="flex: 1;">
+                <div>
+                    <span class="badge" style="background: {priority_color}; color: white;">{priority_display}</span>
+                    <span class="badge" style="background: {status_color}; color: white; margin-left: 0.5rem;">{status_display}</span>
+                    <strong style="margin-left: 0.5rem;">{request_type_display}</strong>
+                    {details_info}
+                </div>
+                {planned_time_display}
+                {requested_time_info}
+                <div style="color: #6b7280; font-size: 0.875rem; margin-top: 0.25rem;">
+                    {trans['from_location']} → {trans['to_location']}
+                    {f"• Geschätzt: {format_duration_minutes(trans['estimated_time_minutes'])}" if trans['estimated_time_minutes'] else ""}
+                    {f"• Tatsächlich: {format_duration_minutes(trans['actual_time_minutes'])}" if trans['actual_time_minutes'] else ""}
+                    {completion_info}
+                    {delay_info}
+                    • {format_time_ago(trans['timestamp'])}
                 </div>
             </div>
         </div>
-        """)
+    </div>
+    """)
     
     # Bestätigungs- und Ablehnungs-Buttons für pending Transporte
     if show_button:
-        with col_button:
-            transport_id = trans['id']
-            button_key = f"confirm_transport_{transport_id}"
-            reject_button_key = f"reject_transport_{transport_id}"
-            dialog_key = f"schedule_dialog_{transport_id}"
-            if st.button("✅ Bestätigen", key=button_key, type="primary", use_container_width=True):
+        transport_id = trans['id']
+        button_key = f"confirm_transport_{transport_id}"
+        reject_button_key = f"reject_transport_{transport_id}"
+        dialog_key = f"schedule_dialog_{transport_id}"
+        
+        # Beide Buttons nebeneinander auf der gleichen Linie
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            if st.button("✅ Bestätigen", key=button_key, type="secondary", use_container_width=True):
                 st.session_state[dialog_key] = True
                 st.rerun()
+        with btn_col2:
             if st.button("❌ Ablehnen", key=reject_button_key, use_container_width=True):
                 if db.delete_transport_request(transport_id):
                     # Cache invalidieren
@@ -692,16 +689,24 @@ def _render_transport_card(trans, db, sim, show_confirm_button=False, delay_clas
                     st.rerun()
                 else:
                     st.error("Fehler beim Löschen der Anfrage")
+        
+        # Dividing line after buttons
+        st.html('<div style="border-bottom: 1px solid #e5e7eb; margin-top: 0.5rem; margin-bottom: 0.5rem;"></div>')
     
     # Bearbeitungs-Button für geplante Transporte
     if show_edit_button:
-        with col_button:
-            transport_id = trans['id']
-            button_key = f"edit_transport_{transport_id}"
-            dialog_key = f"schedule_dialog_{transport_id}"
-            if st.button("✏️ Bearbeiten", key=button_key, use_container_width=True):
-                st.session_state[dialog_key] = True
-                st.rerun()
+        transport_id = trans['id']
+        button_key = f"edit_transport_{transport_id}"
+        dialog_key = f"schedule_dialog_{transport_id}"
+        if st.button("✏️ Bearbeiten", key=button_key, use_container_width=True):
+            st.session_state[dialog_key] = True
+            st.rerun()
+        # Dividing line after edit button
+        st.html('<div style="border-bottom: 1px solid #e5e7eb; margin-top: 0.5rem; margin-bottom: 0.5rem;"></div>')
+    
+    # Dividing line for cards without buttons
+    if not show_button and not show_edit_button:
+        st.html('<div style="border-bottom: 1px solid #e5e7eb; margin-top: 0.5rem; margin-bottom: 0.5rem;"></div>')
     
     # Zeige Dialog wenn geöffnet (nach den Buttons, damit Formular nach Button-Klick erscheint)
     transport_id = trans['id']
