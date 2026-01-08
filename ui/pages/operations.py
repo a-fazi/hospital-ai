@@ -230,7 +230,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                     with col2:
                         st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
                         if is_acknowledged:
-                            st.button("✓ Bestätigt", key=f"ops_ack_{alert['id']}", use_container_width=True, disabled=True)
+                            st.button("✓ Bestätigt", key=f"ops_ack_{alert['id']}", use_container_width=True, disabled=True, type="primary")
                         else:
                             if st.button("Bestätigen", key=f"ops_ack_{alert['id']}", use_container_width=True):
                                 db.acknowledge_alert(alert['id'])

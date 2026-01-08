@@ -307,6 +307,18 @@ def apply_custom_styles():
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
         
+        /* Primary buttons - selected state with light blue */
+        .stButton > button[kind="primary"] {
+            background-color: #dbeafe !important;
+            border-color: #3b82f6 !important;
+            color: #1e40af !important;
+        }
+        
+        .stButton > button[kind="primary"]:hover {
+            background-color: #bfdbfe !important;
+            border-color: #2563eb !important;
+        }
+        
         /* Professionelle Sidebar */
         [data-testid="stSidebar"] {
             background: linear-gradient(to bottom, #ffffff 0%, #fafbfc 100%);
