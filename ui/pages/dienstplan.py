@@ -157,19 +157,19 @@ def render_staff_detail(db, person: dict, week_start: date):
     
     # Hole Daten für diese Woche
     @st.cache_data(ttl=300)  # Cache für 5 Minuten
-    def _get_staff_schedule_cached(_db, _staff_id, _week_start):
+    def _get_staff_schedule_cached(_db, staff_id, week_start):
         """Gecachter Dienstplan"""
-        return _db.get_staff_schedule(_staff_id, _week_start)
+        return _db.get_staff_schedule(staff_id, week_start)
     
     @st.cache_data(ttl=300)  # Cache für 5 Minuten
-    def _get_actual_hours_cached(_db, _staff_id, _week_start):
+    def _get_actual_hours_cached(_db, staff_id, week_start):
         """Gecachte tatsächliche Stunden"""
-        return _db.get_actual_hours(_staff_id, _week_start)
+        return _db.get_actual_hours(staff_id, week_start)
     
     @st.cache_data(ttl=300)  # Cache für 5 Minuten
-    def _calculate_overtime_cached(_db, _staff_id, _week_start):
+    def _calculate_overtime_cached(_db, staff_id, week_start):
         """Gecachte Überstunden-Berechnung"""
-        return _db.calculate_overtime(_staff_id, _week_start)
+        return _db.calculate_overtime(staff_id, week_start)
     
     schedule = _get_staff_schedule_cached(db, staff_id, week_start_str)  # Gecacht
     actual_hours_list = _get_actual_hours_cached(db, staff_id, week_start_str)  # Gecacht
