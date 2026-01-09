@@ -127,7 +127,7 @@ except (ImportError, ModuleNotFoundError, AttributeError):
         raise ImportError(f"ui/styling.py not found at {styling_path}")
 
 # ===== TIMEZONE CONFIGURATION =====
-# Zeitzonenkonfiguration: Setze hier deine lokale Zeitzone
+# zonenkonfiguration: Setze hier deine lokale zone
 # Beispiele: 'Europe/Berlin', 'Europe/Vienna', 'America/New_York', 'Asia/Tokyo'
 # Für Mitteleuropäische Zeit (CET/CEST) verwende 'Europe/Berlin' oder 'Europe/Zurich'
 LOCAL_TIMEZONE = 'Europe/Berlin'  # Ändere dies auf deine Zeitzone
