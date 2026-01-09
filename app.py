@@ -191,10 +191,10 @@ else:
 # Navigation mit Icons
 PAGES = {
     "📊 Dashboard": "dashboard",
+    "📋 Kapazitätsübersicht": "capacity",
     "📈 Live-Metriken": "metrics",
     "🔮 Vorhersagen": "predictions",
     "⚙️ Betrieb": "operations",
-    "📋 Kapazitätsübersicht": "capacity",
     "📅 Dienstplan": "dienstplan",
 
     "🚑 Transport": "transport",

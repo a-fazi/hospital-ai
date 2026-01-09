@@ -131,6 +131,15 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
     staff_load = sim_metrics['staff_load']
     staff_severity, staff_hint = get_metric_severity_for_load(staff_load)
     
+    # Overall capacity utilization (Gesamtauslastung) - berechnet aus Kapazitätsdaten
+    if capacity:
+        total_occupied = sum([c['occupied_beds'] for c in capacity])
+        total_beds = sum([c['total_beds'] for c in capacity])
+        overall_capacity = (total_occupied / total_beds * 100) if total_beds > 0 else 0
+    else:
+        overall_capacity = 0
+    overall_severity, overall_hint = get_metric_severity_for_load(overall_capacity)
+    
     # Rooms free (from simulation - correlated with beds free)
     rooms_free = int(sim_metrics['rooms_free'])
     total_rooms = db.get_total_rooms()
@@ -196,12 +205,12 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
         """, unsafe_allow_html=True)
     
     with col4:
-        severity_color = get_severity_color(staff_severity)
-        badge_html = render_badge(staff_hint, staff_severity)
+        severity_color = get_severity_color(overall_severity)
+        badge_html = render_badge(overall_hint, overall_severity)
         st.markdown(f"""
         <div class="metric-card fade-in-delayed-3" style="border-left-color: {severity_color};">
-            <div style="font-size: 0.75rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.75rem;">Personal-Auslastung</div>
-            <div style="font-size: 2.5rem; font-weight: 700; color: #111827; margin: 0.75rem 0; letter-spacing: -0.02em;">{staff_load:.0f}%</div>
+            <div style="font-size: 0.75rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 0.75rem;">Gesamtauslastung</div>
+            <div style="font-size: 2.5rem; font-weight: 700; color: #111827; margin: 0.75rem 0; letter-spacing: -0.02em;">{overall_capacity:.0f}%</div>
             <div style="margin-top: 1rem;">
                 {badge_html}
             </div>
