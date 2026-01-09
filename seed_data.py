@@ -153,7 +153,7 @@ def generate_seed_data(db: HospitalDB):
             {'name': 'Dr. Sandra Bauer', 'role': 'Fachärztin', 'department': 'Geriatrics', 'category': 'Ärzte', 'contact': 'sandra.bauer@waldkrankenhaus.de'},
             {'name': 'Dr. Christian Meyer', 'role': 'Facharzt', 'department': 'ENT', 'category': 'Ärzte', 'contact': 'christian.meyer@waldkrankenhaus.de'},
             {'name': 'Michael Becker', 'role': 'Transportkoordinator', 'department': 'Logistics', 'category': 'Logistik', 'contact': 'michael.becker@waldkrankenhaus.de'},
-            {'name': 'Sabine Klein', 'role': 'Sekretärin', 'department': 'Verwaltung', 'category': 'Orga', 'contact': 'sabine.klein@waldkrankenhaus.de'},
+            {'name': 'Markus Walk', 'role': 'Chef', 'department': 'Verwaltung', 'category': 'Orga', 'contact': 'markus.schmitz@fau.de'},
         ]
         
         staff_ids = {}
