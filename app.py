@@ -196,9 +196,8 @@ PAGES = {
     "🔮 Vorhersagen": "predictions",
     "⚙️ Betrieb": "operations",
     "📅 Dienstplan": "dienstplan",
-
-    "🚑 Transport": "transport",
     "📦 Inventar": "inventory",
+    "🚑 Transport": "transport",
     "🔧 Gerätewartung": "devices",
     "🏥 Entlassungsplanung": "discharge"
 }
