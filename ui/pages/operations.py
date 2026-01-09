@@ -391,8 +391,11 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                         st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
                         accept_clicked = st.button("✅ Annehmen", key=f"ops_accept_{rec['id']}", use_container_width=True)
                         if accept_clicked:
-                            if action_text:
-                                db.accept_recommendation(rec['id'], action_text)
+                            # Wenn kein Text eingegeben wurde, verwende die Maßnahme aus der Empfehlung
+                            final_action_text = action_text if action_text else rec.get('action', rec.get('title', ''))
+                            
+                            if final_action_text:
+                                db.accept_recommendation(rec['id'], final_action_text)
                                 # Simulationseffekt basierend auf Empfehlungstyp anwenden
                                 rec_type = rec.get('rec_type', '')
                                 if 'staffing' in rec_type.lower() or 'reassign' in rec.get('action', '').lower():
@@ -405,7 +408,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                                 st.success("✅ Empfehlung angenommen")
                                 st.rerun()
                             else:
-                                st.warning("⚠️ Bitte Maßnahme eingeben")
+                                st.warning("⚠️ Keine Maßnahme verfügbar")
                     with col3:
                         st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
                         reject_clicked = st.button("❌ Ablehnen", key=f"ops_reject_{rec['id']}", use_container_width=True)
