@@ -1293,12 +1293,36 @@ class HospitalDB:
             conn = self.get_connection()
             cursor = conn.cursor()
             try:
+                # Get alert details for audit log
+                cursor.execute("""
+                    SELECT message, department, severity
+                    FROM alerts
+                    WHERE id = ?
+                """, (alert_id,))
+                alert_info = cursor.fetchone()
+                
                 cursor.execute("""
                     UPDATE alerts
                     SET acknowledged = 1
                     WHERE id = ?
                 """, (alert_id,))
                 conn.commit()
+                
+                # Audit log
+                if alert_info:
+                    alert_message = alert_info[0] if alert_info[0] else ""
+                    alert_dept = alert_info[1] if alert_info[1] else "N/A"
+                    alert_severity = alert_info[2] if alert_info[2] else "N/A"
+                    details = f"Warnung {alert_id} bestätigt: {alert_message} (Bereich: {alert_dept}, Schweregrad: {alert_severity})"
+                else:
+                    details = f"Warnung {alert_id} bestätigt"
+                
+                cursor.execute("""
+                    INSERT INTO audit_log (timestamp, action_type, user, user_role, entity_type, entity_id, details)
+                    VALUES (?, 'alert_acknowledged', 'System', 'system', 'alert', ?, ?)
+                """, (datetime.now(timezone.utc).isoformat(), alert_id, details))
+                conn.commit()
+                
                 return cursor.rowcount > 0
             finally:
                 conn.close()
