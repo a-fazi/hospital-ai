@@ -296,7 +296,10 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                     # Impact tags (extract from department and rec_type)
                     impact_tags = []
                     if rec.get('department'):
-                        impact_tags.append(rec['department'])
+                        # Übersetze Department-Namen ins Deutsche
+                        dept_map = get_department_name_mapping()
+                        dept_de = dept_map.get(rec['department'], rec['department'])
+                        impact_tags.append(dept_de)
                     if rec.get('rec_type'):
                         # Häufige rec_types ins Deutsche übersetzen
                         rec_type_map = {

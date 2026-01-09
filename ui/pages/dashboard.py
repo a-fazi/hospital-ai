@@ -410,15 +410,6 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                     # German translation for department names - verwende zentrales Mapping
                     from utils import get_department_name_mapping
                     dept_map = get_department_name_mapping()
-                    dept_map.update({
-                        'General Ward': 'Allgemeinstation',
-                        'Neurology': 'Neurologie',
-                        'Pediatrics': 'Pädiatrie',
-                        'Oncology': 'Onkologie',
-                        'Maternity': 'Geburtshilfe',
-                        'Radiology': 'Radiologie',
-                        'Other': 'Andere'
-                    })
                     dept_de = dept_map.get(dept, dept)
                     # German time string
                     if pred_minutes == 1:
@@ -470,6 +461,11 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                     acknowledged_badge = '<span class="badge" style="background: #3B82F6; color: white;">✓ BESTÄTIGT</span>'  # Blau
                     badge_html = f"{badge_html} {acknowledged_badge}"
                 
+                # Übersetze Department-Namen
+                from utils import get_department_name_mapping
+                dept_map = get_department_name_mapping()
+                dept_de = dept_map.get(alert.get('department', 'N/A'), alert.get('department', 'N/A'))
+                
                 delay_class = "fade-in" if i == 0 else f"fade-in-delayed-{min(i, 3)}" if i <= 3 else "fade-in-delayed-3"
                 st.markdown(f"""
                 <div class="info-card {delay_class}" style="background: {background_color}; border-left: 4px solid {border_color};">
@@ -480,7 +476,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                                 <strong style="color: #111827; font-size: 0.9375rem; font-weight: 600;">{alert['message']}</strong>
                             </div>
                             <div style="color: #6b7280; font-size: 0.8125rem; font-weight: 500;">
-                                {alert.get('department', 'N/A')} • {format_time_ago(alert['timestamp'])}
+                                {dept_de} • {format_time_ago(alert['timestamp'])}
                             </div>
                         </div>
                     </div>
@@ -499,6 +495,12 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                 priority_color = get_priority_color(rec['priority'])
                 priority_de = priority_de_map.get(rec['priority'], rec['priority'])
                 badge_html = render_badge(priority_de.upper(), rec['priority'])
+                
+                # Übersetze Department-Namen
+                from utils import get_department_name_mapping
+                dept_map = get_department_name_mapping()
+                dept_de = dept_map.get(rec.get('department', 'N/A'), rec.get('department', 'N/A'))
+                
                 delay_class = "fade-in" if i == 0 else f"fade-in-delayed-{min(i, 3)}" if i <= 3 else "fade-in-delayed-3"
                 st.markdown(f"""
                 <div class="info-card {delay_class}" style="border-left: 4px solid {priority_color};">
@@ -510,7 +512,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                             </div>
                             <p style="color: #4b5563; margin-top: 0.5rem; margin-bottom: 0; line-height: 1.7; font-size: 0.9375rem;">{rec['description']}</p>
                             <div style="color: #9ca3af; font-size: 0.75rem; margin-top: 1rem; font-weight: 500;">
-                                {rec.get('department', 'N/A')} • {format_time_ago(rec['timestamp'])}
+                                {dept_de} • {format_time_ago(rec['timestamp'])}
                             </div>
                         </div>
                     </div>

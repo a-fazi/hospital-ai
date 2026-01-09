@@ -527,6 +527,10 @@ def get_department_name_mapping() -> Dict[str, str]:
         "Pediatrics": "Pädiatrie",
         "Oncology": "Onkologie",
         "Maternity": "Geburtshilfe",
+        "Logistics": "Logistik",
+        "Ward": "Station",
+        "Other": "Andere",
+        "N/A": "K/A",
     }
 
 

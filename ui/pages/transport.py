@@ -533,6 +533,15 @@ def _render_transport_card(trans, db, sim, show_confirm_button=False, delay_clas
     status_display = status_map.get(trans['status'].lower().replace(' ', '_'), trans['status'].replace('_', ' ').upper())
     request_type_display = request_type_map.get(trans['request_type'], trans['request_type'].title())
     
+    # Translate department names for locations
+    from utils import get_department_name_mapping
+    dept_map = get_department_name_mapping()
+    from_location = trans['from_location']
+    to_location = trans['to_location']
+    # Translate if it's a department name, otherwise keep as is (for city names, etc.)
+    from_location_de = dept_map.get(from_location, from_location)
+    to_location_de = dept_map.get(to_location, to_location)
+    
     # Hole Details basierend auf related_entity_type
     details_info = ""
     related_type = trans.get('related_entity_type')
@@ -644,7 +653,7 @@ def _render_transport_card(trans, db, sim, show_confirm_button=False, delay_clas
                 {planned_time_display}
                 {requested_time_info}
                 <div style="color: #6b7280; font-size: 0.875rem; margin-top: 0.25rem;">
-                    {trans['from_location']} → {trans['to_location']}
+                    {from_location_de} → {to_location_de}
                     {f"• Geschätzt: {format_duration_minutes(trans['estimated_time_minutes'])}" if trans['estimated_time_minutes'] else ""}
                     {f"• Tatsächlich: {format_duration_minutes(trans['actual_time_minutes'])}" if trans['actual_time_minutes'] else ""}
                     {completion_info}

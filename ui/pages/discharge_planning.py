@@ -12,7 +12,7 @@ from utils import (
     get_status_color, calculate_inventory_status, calculate_capacity_status,
     format_duration_minutes, get_department_color, get_system_status,
     get_metric_severity_for_load, get_metric_severity_for_count, get_metric_severity_for_free,
-    get_explanation_score_color
+    get_explanation_score_color, get_department_name_mapping
 )
 from ui.components import render_badge, render_empty_state
 
@@ -229,11 +229,16 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
         st.markdown("---")
         
         # Department cards
+        # Übersetze Abteilungsnamen
+        dept_map = get_department_name_mapping()
+        
         cols = st.columns(3)
         for idx, dept_data in enumerate(discharge):
             col_idx = idx % 3
             with cols[col_idx]:
-                dept_color = get_department_color(dept_data['department'])
+                dept_name_en = dept_data['department']
+                dept_name_de = dept_map.get(dept_name_en, dept_name_en)
+                dept_color = get_department_color(dept_name_en)
                 # Deutsche Schlüssel verwenden, falls vorhanden, sonst Englisch für Rückwärtskompatibilität
                 ready = dept_data.get('Entlassungsbereit', dept_data.get('ready_for_discharge_count', 0))
                 pending = dept_data.get('Ausstehend', dept_data.get('pending_discharge_count', 0))
@@ -244,7 +249,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                 
                 st.markdown(f"""
                 <div style="background: white; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; border-top: 4px solid {dept_color};">
-                    <h4 style="margin: 0 0 1rem 0; color: {dept_color};">{dept_data['department']}</h4>
+                    <h4 style="margin: 0 0 1rem 0; color: {dept_color};">{dept_name_de}</h4>
                     <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
                         <span style="color: #6b7280;">Entlassungsbereit:</span>
                         <strong>{ready}</strong>
@@ -268,18 +273,23 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
         
         # Charts
         st.markdown("---")
+        
+        # Übersetze Abteilungsnamen für Charts
+        dept_map = get_department_name_mapping()
+        df_disch['Abteilung'] = df_disch['department'].map(dept_map).fillna(df_disch['department'])
+        
         col1, col2 = st.columns(2)
         
         with col1:
             fig = px.bar(
                 df_disch,
-                x='department',
+                x='Abteilung',
                 y=['Entlassungsbereit', 'Ausstehend'],
                 title="Entlassungsstatus nach Abteilung",
                 barmode='group',
                 color_discrete_map={'Entlassungsbereit': '#10B981', 'Ausstehend': '#F59E0B'},
                 labels={
-                    'department': 'Abteilung',
+                    'Abteilung': 'Abteilung',
                     'Entlassungsbereit': 'Entlassungsbereit',
                     'Ausstehend': 'Ausstehend'
                 }
@@ -292,21 +302,6 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
-            # Mapping for department names (English to German) - verwende zentrales Mapping
-            from utils import get_department_name_mapping
-            department_map = get_department_name_mapping()
-            department_map.update({
-                'General Ward': 'Allgemeinstation',
-                'Neurology': 'Neurologie',
-                'Pediatrics': 'Pädiatrie',
-                'Oncology': 'Onkologie',
-                'Maternity': 'Geburtshilfe',
-                'Radiology': 'Radiologie',
-                'Other': 'Andere'
-            })
-            # Deutsche Abteilungsspalte für Plotting hinzufügen
-            df_disch['Abteilung'] = df_disch['department'].map(department_map).fillna(df_disch['department'])
-            
             # Fix: Check if avg_length_of_stay_hours column exists, create default if missing
             if 'avg_length_of_stay_hours' not in df_disch.columns:
                 df_disch['avg_length_of_stay_hours'] = 0
@@ -317,7 +312,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                 y='avg_length_of_stay_hours',
                 title="Ø Verweildauer nach Abteilung",
                 color='Abteilung',
-                color_discrete_map={department_map.get(dept, dept): get_department_color(dept) for dept in df_disch['department']},
+                color_discrete_map={dept_map.get(dept, dept): get_department_color(dept) for dept in df_disch['department']},
                 labels={
                     'Abteilung': 'Abteilung',
                     'avg_length_of_stay_hours': 'Ø Verweildauer (Std.)'

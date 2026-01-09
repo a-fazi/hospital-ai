@@ -94,33 +94,13 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
         # Bereite Daten für Filter vor - verwende zentrales Mapping
         from utils import get_department_name_mapping
         dept_map_base = get_department_name_mapping()
-        # Erstelle Reverse-Mapping (Deutsch -> Code) für Filter
-        dept_map = {}
-        for code, de_name in dept_map_base.items():
-            dept_map[de_name] = code
-            dept_map[code] = code  # Auch Code selbst als Key
-        # Erweitere für Kompatibilität
-        dept_map.update({
-            'Kardiologie': 'Cardiology',
-            'Gastroenterologie': 'Gastroenterology',
-            'Akutgeriatrie': 'Geriatrics',
-            'Chirurgie': 'Surgery',
-            'Intensivstation': 'ICU',
-            'Orthopädie': 'Orthopedics',
-            'Urologie': 'Urology',
-            'Wirbelsäule': 'SpineCenter',
-            'HNO': 'ENT',
-            'Notaufnahme': 'ER',
-            'General Ward': 'General Ward',
-            'Neurology': 'Neurology',
-            'Pediatrics': 'Pediatrics',
-            'Oncology': 'Oncology',
-            'Orthopedics': 'Orthopädie',
-            'Maternity': 'Geburtshilfe',
-            'Radiology': 'Radiologie',
-            'Other': 'Andere',
-            'N/A': 'N/A'
-        })
+        
+        # dept_map_base enthält bereits English -> Deutsch Mapping
+        # Verwende es direkt für die Anzeige
+        dept_map_display = dept_map_base.copy()
+        
+        # Erstelle Reverse-Mapping (Deutsch -> English) für Filter-Logik
+        dept_map_filter = {de_name: code for code, de_name in dept_map_base.items()}
         
         pred_type_map = {
             'patient_arrival': 'Patientenzugang',
@@ -129,7 +109,9 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
         
         # Extrahiere eindeutige Werte für Filter
         unique_departments = sorted(list(set([p.get('department', 'N/A') for p in all_predictions])))
-        departments_de = [dept_map.get(d, d) for d in unique_departments]
+        # Übersetze Department-Codes zu deutschen Namen für Dropdown
+        departments_de = [dept_map_display.get(d, d) for d in unique_departments]
+        # Mapping für Filter: Deutsch -> English Code
         department_display_map = dict(zip(departments_de, unique_departments))
         
         unique_types = sorted(list(set([p['prediction_type'] for p in all_predictions])))
@@ -262,7 +244,8 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                 pred_type_key = pred['prediction_type']
                 pred_type = pred_type_map.get(pred_type_key, pred_type_key.replace('_', ' ').title())
                 dept = pred.get('department', 'N/A')
-                dept_de = dept_map.get(dept, dept)
+                # Übersetze Department-Code zu deutschem Namen für Anzeige
+                dept_de = dept_map_display.get(dept, dept)
                 minutes = pred['time_horizon_minutes']
                 if minutes == 1:
                     time_str = f'in {minutes} Minute'

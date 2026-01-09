@@ -15,7 +15,7 @@ from utils import (
     format_duration_minutes, get_department_color, get_system_status,
     get_metric_severity_for_load, get_metric_severity_for_count, get_metric_severity_for_free,
     get_explanation_score_color, calculate_days_until_stockout, calculate_reorder_suggestion,
-    calculate_daily_consumption_from_activity
+    calculate_daily_consumption_from_activity, get_department_name_mapping
 )
 from ui.components import render_badge, render_empty_state
 
@@ -132,6 +132,9 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
         restock_suggestions.sort(key=lambda x: {'hoch': 1, 'mittel': 2, 'niedrig': 3}[x['suggestion']['priority']])
         
         if restock_suggestions:
+            # Department name mapping für Übersetzungen
+            dept_map = get_department_name_mapping()
+            
             for suggestion_data in restock_suggestions:
                 item = suggestion_data['item']
                 suggestion = suggestion_data['suggestion']
@@ -139,6 +142,9 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                 days_until_stockout = suggestion_data['days_until_stockout']
                 
                 priority_color = get_severity_color(suggestion['priority'])
+                
+                # Übersetze Abteilungsname
+                dept_de = dept_map.get(item.get('department', 'N/A'), item.get('department', 'N/A'))
                 
                 # Formatiere Bestelltermin
                 order_by_info = ""
@@ -169,7 +175,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                     <div style="background: #f9fafb; padding: 1rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 3px solid {priority_color};">
                         <div style="font-weight: 600; color: #1f2937; margin-bottom: 0.25rem;">{item['item_name']}</div>
                         <div style="font-size: 0.875rem; color: #6b7280; margin-top: 0.25rem;">
-                            {item.get('department', 'N/A')}{days_info}{consumption_info}
+                            {dept_de}{days_info}{consumption_info}
                         </div>
                         <div style="font-size: 0.875rem; color: #6b7280; margin-top: 0.25rem;">
                             Aktuell: {item['current_stock']} {item['unit']} → Vorgeschlagen: {suggestion['suggested_qty']} {item['unit']}
@@ -277,6 +283,10 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                 
                 status_color = "#F59E0B" if order['status'] in ['ordered', 'in_transit'] else "#10B981"
                 
+                # Übersetze Department-Namen
+                dept_map = get_department_name_mapping()
+                order_dept_de = dept_map.get(order.get('department', 'N/A'), order.get('department', 'N/A'))
+                
                 # Erwartete Lieferzeit
                 delivery_info = ""
                 if transport_info:
@@ -308,7 +318,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                             <div style="font-weight: 600; color: #1f2937; margin-bottom: 0.25rem;">{order['item_name']}</div>
                             <div style="font-size: 0.875rem; color: #6b7280; margin-top: 0.25rem;">
                                 Menge: {order['quantity']} {next((i['unit'] for i in inventory if i['id'] == order['item_id']), 'Einheiten')} • 
-                                Ziel-Abteilung: {order.get('department', 'N/A')} • 
+                                Ziel-Abteilung: {order_dept_de} • 
                                 Lieferung: Extern → Hauptlager • 
                                 Status: <span style="color: {status_color}; font-weight: 600;">{status_display}</span>{delivery_info}
                             </div>
@@ -359,13 +369,17 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
             else:
                 risk_level = "niedrig"
             
+            # Übersetze Department-Namen
+            dept_map = get_department_name_mapping()
+            dept_de = dept_map.get(item.get('department', 'N/A'), item.get('department', 'N/A'))
+            
             inventory_materials.append({
                 'name': item['item_name'],
                 'current_stock': item['current_stock'],
                 'min_threshold': item['min_threshold'],
                 'max_capacity': item['max_capacity'],
                 'unit': item['unit'],
-                'department': item.get('department', 'N/A'),
+                'department': dept_de,
                 'days_until_stockout': days_until_stockout,
                 'risk_level': risk_level,
                 'stock_percent': stock_percent,
@@ -392,7 +406,7 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                 )
             
             with col2:
-                # Extrahiere alle verfügbaren Abteilungen
+                # Extrahiere alle verfügbaren Abteilungen (bereits auf Deutsch übersetzt)
                 departments = sorted(set([mat['department'] for mat in inventory_materials if mat['department'] and mat['department'] != 'N/A']))
                 departments.insert(0, "Alle Abteilungen")
                 
