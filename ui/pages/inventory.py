@@ -319,9 +319,9 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
         else:
             st.markdown(render_empty_state("📋", "Keine aktiven Bestellungen", "Aktive Bestellungen werden hier angezeigt"), unsafe_allow_html=True)
         
-        # 2. Lagerrisiko
+        # 2. Lagerbestand
         st.markdown("---")
-        st.markdown("### Lagerrisiko")
+        st.markdown("### Lagerbestand")
         st.markdown("")  # Abstand
         
         # Verwende echte Inventory-Daten aus der DB mit präzisen Berechnungen

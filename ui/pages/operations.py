@@ -22,6 +22,17 @@ def _get_audit_log_cached(_db, limit):
 
 def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get_cached_capacity=None):
     """Rendert die Betrieb-Seite"""
+    # Feedback-Nachrichten nach Rerun anzeigen
+    if 'ops_feedback_message' in st.session_state:
+        feedback = st.session_state.ops_feedback_message
+        if feedback['type'] == 'success':
+            st.success(feedback['message'])
+        elif feedback['type'] == 'info':
+            st.info(feedback['message'])
+        elif feedback['type'] == 'warning':
+            st.warning(feedback['message'])
+        del st.session_state.ops_feedback_message
+    
     # ===== SOFORT: STRUKTUR RENDERN =====
     # Operations page with tabs - sofort anzeigen
     tab1, tab2, tab3 = st.tabs(["🚨 Warnungen", "💡 Empfehlungen", "📝 Protokoll"])
@@ -404,8 +415,20 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                                     sim.apply_recommendation_effect(rec_type, 'open_overflow_beds', duration_minutes=45)
                                 elif 'room' in rec_type.lower() or 'room' in rec.get('action', '').lower():
                                     sim.apply_recommendation_effect(rec_type, 'room_allocation', duration_minutes=30)
-                                st.cache_data.clear()  # Cache leeren nach wichtiger Aktion
-                                st.success("✅ Empfehlung angenommen")
+                                
+                                # Cache leeren und Background-Daten aktualisieren
+                                st.cache_data.clear()
+                                if 'background_data' in st.session_state:
+                                    # Aktualisiere Empfehlungen und Audit-Log direkt im Cache
+                                    st.session_state.background_data['recommendations'] = db.get_pending_recommendations()
+                                    st.session_state.background_data['audit_log'] = db.get_audit_log(100)
+                                    st.session_state.background_data['timestamp'] = time.time()
+                                
+                                # Feedback-Nachricht für nach Rerun speichern
+                                st.session_state.ops_feedback_message = {
+                                    'type': 'success',
+                                    'message': '✅ Empfehlung angenommen'
+                                }
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Keine Maßnahme verfügbar")
@@ -415,8 +438,20 @@ def render(db, sim, get_cached_alerts=None, get_cached_recommendations=None, get
                         if reject_clicked:
                             if action_text:
                                 db.reject_recommendation(rec['id'], action_text)
-                                st.cache_data.clear()  # Cache leeren nach wichtiger Aktion
-                                st.info("❌ Empfehlung abgelehnt")
+                                
+                                # Cache leeren und Background-Daten aktualisieren
+                                st.cache_data.clear()
+                                if 'background_data' in st.session_state:
+                                    # Aktualisiere Empfehlungen und Audit-Log direkt im Cache
+                                    st.session_state.background_data['recommendations'] = db.get_pending_recommendations()
+                                    st.session_state.background_data['audit_log'] = db.get_audit_log(100)
+                                    st.session_state.background_data['timestamp'] = time.time()
+                                
+                                # Feedback-Nachricht für nach Rerun speichern
+                                st.session_state.ops_feedback_message = {
+                                    'type': 'info',
+                                    'message': '❌ Empfehlung abgelehnt'
+                                }
                                 st.rerun()
                             else:
                                 st.warning("⚠️ Bitte Ablehnungsgrund eingeben")
